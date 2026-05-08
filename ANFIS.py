@@ -15,7 +15,9 @@ from itertools import product
 import warnings
 warnings.filterwarnings('ignore')
 
-# Data retrieval
+# Data retrieval: First it will try to import he dataretrieval package. 
+#If not successful, it will fall back on synthetic data. This will allow the code to run locally, but an internet connection is required for best results.
+
 try:
     from dataretrieval import nwis
     DATA_AVAILABLE = True
@@ -23,7 +25,8 @@ except ImportError:
     DATA_AVAILABLE = False
     print("dataretrieval not installed. Using synthetic data.")
 
-# ------------------------- Metrics (unchanged) -------------------------
+# Metrics: These functions implement all evaluation metrics used in the paper. They are kept simple and vectorized for speed.
+
 def rmse(y_true, y_pred): return np.sqrt(mean_squared_error(y_true, y_pred))
 def mae(y_true, y_pred): return mean_absolute_error(y_true, y_pred)
 def r_coeff(y_true, y_pred): return r2_score(y_true, y_pred)
@@ -48,26 +51,32 @@ def performance_index(metrics_dict, all_metrics_list):
                   metrics_dict['MAPE']/MAPE_max + E_min/metrics_dict['E'] +
                   IA_min/metrics_dict['IA'])
 
-# ------------------------- ANFIS (safe MF) -------------------------
+# ANFIS MODEL
+
 class ANFIS:
     def __init__(self, n_inputs, n_mfs=2):
         self.n_inputs = n_inputs
         self.n_mfs = n_mfs
         self.n_rules = n_mfs ** n_inputs
+        # Safety check to prevent memory explosion (like 2^28 rules)
         if self.n_rules > 10000:
             raise MemoryError(f"Too many rules ({self.n_rules}). Reduce n_inputs or n_mfs.")
+        # Pre‑compute all combinations of membership indices for each rule
         self.rule_indices = list(product(range(n_mfs), repeat=n_inputs))
 
     def gaussmf(self, x, c, sigma):
         z = ((x - c) / sigma) ** 2
-        z = np.clip(z, 0, 100)
+        z = np.clip(z, 0, 100) #keeps exponent manageable
         return np.exp(-0.5 * z)
 
     def forward(self, X, params):
+        # First part: membership function parameters (centers and widths)
         n_mf_params = 2 * self.n_inputs * self.n_mfs
         mf_params = params[:n_mf_params].reshape(self.n_inputs, self.n_mfs, 2)
+        # Second part: consequent parameters (p, q, r for each rule)
         cons_params = params[n_mf_params:].reshape(self.n_rules, self.n_inputs + 1)
 
+        # Compute membership grades for each input and each MF
         mf_vals = []
         for i in range(self.n_inputs):
             x = X[:, i]
@@ -77,15 +86,18 @@ class ANFIS:
                 sigma = mf_params[i, j, 1]
                 mf_vals_i[:, j] = self.gaussmf(x, c, sigma)
             mf_vals.append(mf_vals_i)
-
+        
+        # Compute firing strengths (product of degrees for each rule)
         firing = np.ones((X.shape[0], self.n_rules))
         for r, idx_tuple in enumerate(self.rule_indices):
             for i, mf_idx in enumerate(idx_tuple):
                 firing[:, r] *= mf_vals[i][:, mf_idx]
-
+        
+        # Normalise firing strengths
         firing_sum = np.sum(firing, axis=1, keepdims=True)
         w_norm = firing / (firing_sum + 1e-8)
-
+        
+        # Compute weighted output: sum over rules of (normalised firing * linear consequent)
         output = np.zeros(X.shape[0])
         for r in range(self.n_rules):
             linear_part = np.dot(X, cons_params[r, :-1]) + cons_params[r, -1]
@@ -97,12 +109,14 @@ class ANFIS:
         n_mf_params = 2 * self.n_inputs * self.n_mfs
         n_cons_params = self.n_rules * (self.n_inputs + 1)
         bounds = []
-        # MF centres and widths (same as before)
+        
+        # Bounds for MF centres and widths
         for i in range(self.n_inputs):
             col_min, col_max = X_train[:, i].min(), X_train[:, i].max()
             for _ in range(self.n_mfs):
-                bounds.append((col_min, col_max))
-                bounds.append((0.1, (col_max - col_min) / 2))
+                bounds.append((col_min, col_max)) #center
+                bounds.append((0.1, (col_max - col_min) / 2)) #width
+        
         # Consequent params bounds
         for _ in range(n_cons_params):
             bounds.append((-5, 5))  # wider range because y is scaled
@@ -120,7 +134,7 @@ class ANFIS:
         init = np.concatenate([init_mf, init_cons])
         return init, bounds
 
-# ------------------------- A-DEPSO (with restart) -------------------------
+# A-DEPSO (with restart) 
 class ADEPSO:
     def __init__(self, dim, bounds, pop_size=40, max_iter=500, beta=30.0, delta=0.5, mcr0=0.5, mu=0.1):
         self.dim = dim
