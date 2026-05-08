@@ -7,7 +7,7 @@ For practicality, this implementation omits the wavelet decomposition step used 
 The code replicates the core methodology described in the paper we were assigned.
 
 
-Dataset Source:
+*Dataset Source:*
 
 Real‑time historical data is downloaded automatically from the USGS National Water Information System using the dataretrieval Python package.
 
@@ -22,7 +22,7 @@ Aggregation: Daily values are resampled to monthly means.
 You can choose a different station by changing the site variable inside the script and putting the correspondent station code.
 
 
-Required Libraries & Software
+*Required Libraries & Software*
 
 Software:
 Python 3.8 or higher
@@ -35,7 +35,7 @@ Install the following packages using `pip` in the terminal:
 pip install numpy pandas scikit-learn matplotlib dataretrieval
 
 
-Libraries and their purposes:
+*Libraries and their purposes:*
 
 numpy
 numerical arrays and math ops
@@ -53,7 +53,7 @@ dataretrieval
 direct download of USGS water data
 
 
-How to Run the Code
+*How to Run the Code*
 
 Step 1 – Save the script
 Take the code and paste it into VS Code or equivalent.
@@ -70,7 +70,7 @@ Alternatively press F5 or paste the following code into the terminal where filen
 python filename.py
 
 
-Troubleshooting
+*Troubleshooting*
 
 Here is the list of errors you might encounter and how to fix:
 
