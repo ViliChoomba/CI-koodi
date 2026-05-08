@@ -275,7 +275,7 @@ if __name__ == "__main__":
         df_q = df_q[['00060_Mean']].rename(columns={'00060_Mean': 'Q'})
         df_sc = df_sc[['00095_Mean']].rename(columns={'00095_Mean': 'EC'})
         combined = pd.merge(df_q, df_sc, left_index=True, right_index=True, how='inner')
-        monthly = combined.resample('M').mean().dropna()
+        monthly = combined.resample('ME').mean().dropna()
         print(f"Obtained {len(monthly)} monthly records.")
     else:
         print("Using synthetic data.")
