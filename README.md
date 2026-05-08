@@ -25,9 +25,9 @@ You can choose a different station by changing the site variable inside the scri
 *Required Libraries & Software*
 
 Software:
-Python 3.8 or higher
-Any text editor / IDE (VS Code recommended)
-Working internet connection
+Python 3.8 or higher,
+Any text editor / IDE (VS Code recommended),
+Working internet connection,
 
 Python Libraries
 Install the following packages using `pip` in the terminal:
