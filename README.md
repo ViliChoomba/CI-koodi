@@ -75,19 +75,14 @@ Troubleshooting
 Here is the list of errors you might encounter and how to fix:
 
 
-MemoryError:
-Reduce n_mfs or number of inputs. The default is 3 inputs + 2 MFs → 8 rules, which is safe.  
+MemoryError : Reduce n_mfs or number of inputs. The default is 3 inputs + 2 MFs → 8 rules, which is safe.  
 
-ModuleNotFoundError: No module named 'dataretrieval' :
-Install it: pip install dataretrieval. The script will fall back to synthetic data if not installed. 
+ModuleNotFoundError : No module named 'dataretrieval' :Install it: pip install dataretrieval. The script will fall back to synthetic data if not installed. 
 
-Very poor predictions (flat line) : 
-Increase max_iter to 800 or n_restarts to 5. Also check that you are using real USGS data (not synthetic). 
+Very poor predictions (flat line) : Increase max_iter to 800 or n_restarts to 5. Also check that you are using real USGS data (not synthetic). 
 
-Plot does not appear :
-Ensure matplotlib is installed. On some headless systems you may need to add plt.show() – already present. 
+Plot does not appear : Ensure matplotlib is installed. On some headless systems you may need to add plt.show() – already present. 
 
-USGS data download fails :
-The USGS service may be temporarily unavailable. Wait a few minutes and retry, or use synthetic data by commenting out the real‑data block. 
+USGS data download fails : The USGS service may be temporarily unavailable. Wait a few minutes and retry, or use synthetic data by commenting out the real‑data block. 
 
 
