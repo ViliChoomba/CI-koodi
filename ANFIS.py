@@ -1,10 +1,3 @@
-"""
-ANFIS-A-DEPSO for EC prediction - FINAL FIXED VERSION
-- Scales both X and y
-- Better initialization (linear regression for consequents)
-- Extended training (500 iterations)
-- Restart mechanism to avoid local minima
-"""
 
 import numpy as np
 import pandas as pd
@@ -51,7 +44,7 @@ def performance_index(metrics_dict, all_metrics_list):
                   metrics_dict['MAPE']/MAPE_max + E_min/metrics_dict['E'] +
                   IA_min/metrics_dict['IA'])
 
-# ANFIS MODEL
+# ANFIS MODEL  Adaptive Neuro-Fuzzy Inference System (Sugeno type).Supports any number of inputs and membership functions per input. The number of rules = (n_mfs)^(n_inputs).
 
 class ANFIS:
     def __init__(self, n_inputs, n_mfs=2):
@@ -117,7 +110,7 @@ class ANFIS:
                 bounds.append((col_min, col_max)) #center
                 bounds.append((0.1, (col_max - col_min) / 2)) #width
         
-        # Consequent params bounds
+        # Consequent parameter bounds
         for _ in range(n_cons_params):
             bounds.append((-5, 5))  # wider range because y is scaled
 
@@ -137,15 +130,15 @@ class ANFIS:
 # A-DEPSO (with restart) 
 class ADEPSO:
     def __init__(self, dim, bounds, pop_size=40, max_iter=500, beta=30.0, delta=0.5, mcr0=0.5, mu=0.1):
-        self.dim = dim
-        self.bounds = np.array(bounds)
+        self.dim = dim # number of decision variables
+        self.bounds = np.array(bounds) # (low, high) for each variable
         self.pop_size = pop_size
         self.max_iter = max_iter
-        self.beta = beta
-        self.delta = delta
-        self.mcr = mcr0
-        self.mu = mu
-        self.c1 = self.c2 = 1.5
+        self.beta = beta  # adaptive mutation parameter
+        self.delta = delta # inertia weight factor
+        self.mcr = mcr0 # initial crossover rate
+        self.mu = mu # adaptation rate for mcr
+        self.c1 = self.c2 = 1.5 # PSO acceleration constants
 
     def optimize(self, fitness_func, n_restarts=3, verbose=True):
         """Run multiple restarts and keep the best solution"""
@@ -163,32 +156,35 @@ class ADEPSO:
         return best_overall, best_fit_overall
 
     def _run_once(self, fitness_func, verbose=True):
-        # Initialisation
+         # Initialise population within bounds
         X = np.random.uniform(low=self.bounds[:,0], high=self.bounds[:,1],
                               size=(self.pop_size, self.dim))
         fitness = np.array([fitness_func(ind) for ind in X])
-        p_best = X.copy()
+        p_best = X.copy() # personal best positions
         p_best_fit = fitness.copy()
         g_best_idx = np.argmin(fitness)
-        g_best = X[g_best_idx].copy()
+        g_best = X[g_best_idx].copy() # global best position
         g_best_fit = fitness[g_best_idx]
-        V = np.zeros_like(X)
-        S_Ar = []
+        V = np.zeros_like(X) # velocities for PSO part
+        S_Ar = [] # store successful crossover rates
 
         for l in range(1, self.max_iter+1):
+            # Adaptive parameters (Eq.31, 32)
             G = np.sin(self.beta * np.pi * (l/self.max_iter)) * np.exp(-l/self.max_iter) * (0.5 + 0.15*np.random.randn())
             w = self.delta * np.exp(-l/self.max_iter)
 
             for j in range(self.pop_size):
+                #  Mutation: combine DE and PSO (Eq.27-30) 
                 idx = np.random.choice(self.pop_size, 3, replace=False)
                 a1, a2, a3 = idx[0], idx[1], idx[2]
-                X_DE = X[a1] + G * (X[a2] - X[a3])
+                X_DE = X[a1] + G * (X[a2] - X[a3]) # DE mutation (Eq.27)
                 V[j] = w * V[j] + self.c1*np.random.rand(self.dim)*(p_best[j]-X[j]) + \
-                       self.c2*np.random.rand(self.dim)*(g_best-X[j])
-                X_PSO = X[j] + V[j]
+                       self.c2*np.random.rand(self.dim)*(g_best-X[j]) # PSO velocity (Eq.28)
+                X_PSO = X[j] + V[j] # PSO position (Eq.29)
                 rho = np.random.rand()
-                X_new = rho * X_PSO + (1-rho) * X_DE
+                X_new = rho * X_PSO + (1-rho) * X_DE # Combine (Eq.30)
 
+                # Adaptive crossover (Eq.33-35)
                 Ar = self.mcr + 0.1 * np.random.randn()
                 z = np.zeros(self.dim)
                 for i in range(self.dim):
@@ -201,8 +197,8 @@ class ADEPSO:
                     else:
                         z[i] = g_best[i]
 
-                # Refreshing operator - reduce probability to avoid disruption
-                if np.random.rand() < 0.1:  # was previously based on LC, now fixed low prob
+                # Refreshing operator - reduce probability to avoid disruption. Low probability (0.1) to avoid destroying good solutions.
+                if np.random.rand() < 0.1:  #
                     if np.random.rand() < 0.5:
                         sigma = np.random.randn()
                         z = z + sigma * (2*np.random.randn()*g_best - X[j])
@@ -210,9 +206,12 @@ class ADEPSO:
                         sigma = np.random.randn()
                         idx_a = np.random.choice(self.pop_size, 2, replace=False)
                         z = g_best + sigma * (X[idx_a[0]] - X[idx_a[1]])
-
+                
+                # Clip to bounds and evaluate
                 z = np.clip(z, self.bounds[:,0], self.bounds[:,1])
                 new_fit = fitness_func(z)
+               
+                #Selection
                 if new_fit <= fitness[j]:
                     X[j] = z
                     fitness[j] = new_fit
@@ -222,7 +221,8 @@ class ADEPSO:
                         g_best = z
                         g_best_fit = new_fit
                     S_Ar.append(Ar)
-
+            
+            # Update crossover rate
             if len(S_Ar) > 0:
                 self.mcr = (1-self.mu)*self.mcr + self.mu * np.mean(S_Ar)
                 S_Ar = []
@@ -230,7 +230,7 @@ class ADEPSO:
                 print(f"    Iter {l:3d}, Best RMSE = {g_best_fit:.4f}")
         return g_best, g_best_fit
 
-# ------------------------- Baseline models (unchanged) -------------------------
+# Baseline models 
 class LSSVM:
     def __init__(self, gamma=1992.0): self.gamma = gamma
     def fit(self, X, y):
@@ -251,7 +251,7 @@ class GRNN:
             y_pred[i] = np.sum(weights * self.y) / (np.sum(weights) + 1e-8)
         return y_pred
 
-# ------------------------- Simplified features (3 inputs) -------------------------
+# Simplified features (3 inputs)
 def create_simple_features(df):
     data = df[['Q', 'EC']].copy()
     data['EC_lag1'] = data['EC'].shift(1)
@@ -264,16 +264,19 @@ def create_simple_features(df):
 
 # ------------------------- Main execution -------------------------
 if __name__ == "__main__":
-    # --- 1. Load data (2004-2024) ---
+    # Load data (2004-2024)
     if DATA_AVAILABLE:
         site = '07374000'
         start = '2004-01-01'
         end = '2024-05-19'
         print(f"Downloading daily data from USGS station {site} ({start} to {end})...")
+        # Downloading daily discharge and specific counductance
         df_q, _ = nwis.get_dv(sites=site, parameterCd='00060', start=start, end=end)
         df_sc, _ = nwis.get_dv(sites=site, parameterCd='00095', start=start, end=end)
+        # Rename columns for clarity
         df_q = df_q[['00060_Mean']].rename(columns={'00060_Mean': 'Q'})
         df_sc = df_sc[['00095_Mean']].rename(columns={'00095_Mean': 'EC'})
+        # Merge on date and resample to monthly averages
         combined = pd.merge(df_q, df_sc, left_index=True, right_index=True, how='inner')
         monthly = combined.resample('ME').mean().dropna()
         print(f"Obtained {len(monthly)} monthly records.")
@@ -285,7 +288,7 @@ if __name__ == "__main__":
         EC = 800 + 200*np.sin(np.arange(240)*2*np.pi/6) + 50*np.random.randn(240) + 0.5*Q
         monthly = pd.DataFrame({'Q': Q, 'EC': EC}, index=dates)
 
-    # --- 2. Create features and scale both X and y ---
+    # Create features and scale both X and y
     X_raw, y_raw, dates_raw = create_simple_features(monthly)
     print(f"After creating lags: {len(y_raw)} samples, input dim = {X_raw.shape[1]}")
 
@@ -295,17 +298,17 @@ if __name__ == "__main__":
     y_train, y_test = y_raw[:split], y_raw[split:]
     dates_train, dates_test = dates_raw[:split], dates_raw[split:]
 
-    # Scale X
+    # Scale inputs to zero mean and unit variance
     scaler_X = StandardScaler()
     X_train_scaled = scaler_X.fit_transform(X_train)
     X_test_scaled = scaler_X.transform(X_test)
 
-    # Scale y (important!)
+    # Scale target. CRITICAL for convergence, as raw EC values (200-500) are large
     scaler_y = StandardScaler()
     y_train_scaled = scaler_y.fit_transform(y_train.reshape(-1,1)).ravel()
     y_test_scaled = scaler_y.transform(y_test.reshape(-1,1)).ravel()
 
-    # --- 3. ANFIS + A-DEPSO ---
+    # ANFIS + A-DEPSO
     n_inputs = X_train_scaled.shape[1]   # =3
     n_mfs = 2
     print(f"\nBuilding ANFIS with {n_inputs} inputs, {n_mfs} MFs -> {n_mfs**n_inputs} rules")
@@ -349,7 +352,7 @@ if __name__ == "__main__":
     for k, v in metrics_anfis.items():
         print(f"{k}: {v:.4f}")
 
-    # --- 4. Baseline models (using scaled X, but original y) ---
+    # Baseline models (using scaled X, but original y) 
     # Note: baselines use original y (not scaled) to be fair
     def train_eval_baseline(model, X_train, y_train, X_test, y_test):
         model.fit(X_train, y_train)
@@ -380,7 +383,7 @@ if __name__ == "__main__":
     pi_value = performance_index(metrics_anfis, all_metrics)
     print(f"\nPerformance Index (PI) for ANFIS-A-DEPSO: {pi_value:.4f}")
 
-    # --- 5. Plot with dates (original scale) ---
+    # Plot with dates
     try:
         import matplotlib.pyplot as plt
         import matplotlib.dates as mdates
